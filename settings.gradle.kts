@@ -13,3 +13,4 @@ plugins {
 
 rootProject.name = "kameleon"
 include("lib")
+include("ksp")
