@@ -1,65 +1,80 @@
 package dev.dzgeorgy.kameleon.ksp
 
-import com.google.devtools.ksp.processing.*
+import com.google.devtools.ksp.processing.CodeGenerator
+import com.google.devtools.ksp.processing.KSPLogger
+import com.google.devtools.ksp.processing.Resolver
+import com.google.devtools.ksp.processing.SymbolProcessor
 import com.google.devtools.ksp.symbol.KSAnnotated
+import com.google.devtools.ksp.symbol.KSNode
+import com.google.devtools.ksp.symbol.KSVisitorVoid
 import com.squareup.kotlinpoet.FileSpec
 import com.squareup.kotlinpoet.FunSpec
 import com.squareup.kotlinpoet.ksp.toClassName
 import com.squareup.kotlinpoet.ksp.writeTo
+import dev.dzgeorgy.kameleon.ksp.visitors.AliasVisitor
 import dev.dzgeorgy.kameleon.ksp.visitors.MapToVisitor
+import dev.dzgeorgy.kameleon.lib.Alias
 import dev.dzgeorgy.kameleon.lib.MapTo
+
+typealias AliasesCache = Map<KSNode, Set<String>>
 
 class KameleonProcessor(
     private val codeGenerator: CodeGenerator,
     private val logger: KSPLogger
 ) : SymbolProcessor {
 
+    // Status
+    private var firstRound = true
+
+    // Aliases
+    private val aliasVisitor = AliasVisitor(logger)
+    private val _aliasesCache: HashMap<KSNode, Set<String>> = hashMapOf()
+    private val aliasesCache: AliasesCache
+        get() = _aliasesCache
+
+    // Mappers
+    private val mapToVisitor = MapToVisitor(logger, aliasesCache)
     override fun process(resolver: Resolver): List<KSAnnotated> {
-        val mapToSymbols = resolver.getSymbolsWithAnnotation(MapTo::class.qualifiedName!!)
 
-        val mapToVisitor = MapToVisitor(logger)
+        // Processing annotations only once.
+        if (firstRound) {
+            val aliasSequence = resolver.getSymbolsWithAnnotation(Alias::class.qualifiedName!!)
 
-        mapToSymbols.forEach {
-            it.accept(mapToVisitor, Unit)
+            aliasSequence.map { it.accept(aliasVisitor, Unit) }.forEach {
+                _aliasesCache[it.first] = it.second
+            }
+
+            firstRound = false
         }
 
-        mapToVisitor.getResults()
-            .groupBy { it.source }
-            .forEach { (source, data) ->
+        val mappingSequence = resolver.getSymbolsWithAnnotation(MapTo::class.qualifiedName!!)
 
-                // Create file.
-                val fileSpec = FileSpec.builder(
-                    packageName = source.qualifiedName?.getQualifier().orEmpty(),
-                    fileName = "${source}Mapper"
-                )
-
-                // Process mapping data.
-                data.forEach {
-
-                    // Create mapper.
-                    val mapper = FunSpec.builder("to${it.target}")
-                        .receiver(it.source.toClassName())
-                        .returns(it.target.toClassName())
-                        .addKdoc("${it.source} -> ${it.target}")
-                        .addCode(
-                            """
-                        return ${
-                                it.mappedData.map { (k, v) -> "$k = this.$v" }
-                                    .joinToString(
-                                        separator = ", ",
-                                        prefix = "${it.target}(",
-                                        postfix = ")"
-                                    )
-                            }
-                    """.trimIndent())
-                        .build()
-
-                    // Add mapper to file.
-                    fileSpec.addFunction(mapper)
-                }
-
-                // Write file.
-                fileSpec.build().writeTo(codeGenerator, false)
+        val mappers = mappingSequence.map { it.accept(mapToVisitor, Unit) }
+            .forEach { data ->
+                data.groupBy { it.from }
+                    .forEach { (source, targets) ->
+                        val mappers = targets.map {
+                            FunSpec.builder("to${it.to}")
+                                .receiver(it.from.toClassName())
+                                .returns(it.to.toClassName())
+                                .addKdoc("${it.from} -> ${it.to}")
+                                .addCode(
+                                    """return ${
+                                        it.mapping.map { (k, v) -> "$k = this.$v" }.joinToString(
+                                            separator = ", ",
+                                            prefix = "${it.to}(",
+                                            postfix = ")"
+                                        )
+                                    }
+                                    """.trimIndent()
+                                )
+                                .build()
+                        }
+                        val file = FileSpec.builder(source.packageName.asString(), "${source}Mapper")
+                            .addFunctions(mappers)
+                            .build()
+                            .writeTo(codeGenerator, false)
+                    }
             }
 
         return emptyList()
