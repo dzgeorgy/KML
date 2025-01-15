@@ -2,9 +2,10 @@ package dev.dzgeorgy.kameleon.sample
 
 import dev.dzgeorgy.kameleon.lib.Alias
 import dev.dzgeorgy.kameleon.lib.MapTo
+import dev.dzgeorgy.kameleon.lib.MappingDirection
 
 @MapTo(TrackEntity::class)
-@MapTo(TrackModel::class)
+@MapTo(TrackModel::class, MappingDirection.BOTH)
 data class Track(
     @property:Alias("_name")
     val name: String,

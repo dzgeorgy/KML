@@ -1,10 +1,12 @@
 package dev.dzgeorgy.kameleon.ksp.visitors
 
+import com.google.devtools.ksp.outerType
 import com.google.devtools.ksp.processing.KSPLogger
 import com.google.devtools.ksp.symbol.*
 import com.google.devtools.ksp.visitor.KSDefaultVisitor
 import dev.dzgeorgy.kameleon.ksp.AliasesCache
 import dev.dzgeorgy.kameleon.lib.MapTo
+import dev.dzgeorgy.kameleon.lib.MappingDirection
 
 class MapToVisitor(
     private val logger: KSPLogger,
@@ -20,16 +22,21 @@ class MapToVisitor(
     }
 
     override fun visitClassDeclaration(classDeclaration: KSClassDeclaration, data: Unit): Sequence<MappingData> {
-        val properties = classDeclaration.getPropertiesToMap()
         return classDeclaration.getMapToData()
-            .map { mapToData ->
-                val parameters = mapToData.target.getConstructorParametersToMap()
-                MappingData(
-                    from = classDeclaration,
-                    to = mapToData.target,
-                    mapping = associateParametersWithProperties(parameters, properties)
-                )
+            .flatMap { mapToData ->
+                when (mapToData.direction) {
+                    MappingDirection.FROM -> listOf(createMappingData(classDeclaration, mapToData.target))
+                    MappingDirection.TO -> listOf(createMappingData(mapToData.target, classDeclaration))
+                    MappingDirection.BOTH -> listOf(createMappingData(classDeclaration, mapToData.target), createMappingData(mapToData.target, classDeclaration))
+                }
             }
+    }
+
+    private fun createMappingData(from: KSClassDeclaration, to: KSClassDeclaration): MappingData {
+        val properties = from.getPropertiesToMap()
+        val parameters = to.getConstructorParametersToMap()
+        val mapping = associateParametersWithProperties(parameters, properties)
+        return MappingData(from, to, mapping)
     }
 
     private fun associateParametersWithProperties(
@@ -71,8 +78,11 @@ class MapToVisitor(
         return annotations.filter { it.shortName.asString() == MapTo::class.simpleName.toString() }
             .map { annotation ->
                 val targetType: KSType = annotation.arguments.first().value as KSType
+                val direction =
+                    MappingDirection.valueOf((annotation.arguments[1].value as KSType).declaration.simpleName.asString())
                 MapToAnnotationData(
-                    target = targetType.declaration as KSClassDeclaration
+                    target = targetType.declaration as KSClassDeclaration,
+                    direction = direction
                 )
             }
     }
@@ -104,7 +114,8 @@ class MapToVisitor(
 }
 
 data class MapToAnnotationData(
-    val target: KSClassDeclaration
+    val target: KSClassDeclaration,
+    val direction: MappingDirection
 )
 
 data class MappingData(
