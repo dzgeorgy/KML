@@ -6,5 +6,12 @@ import kotlin.reflect.KClass
 @Retention(AnnotationRetention.SOURCE)
 @Repeatable
 annotation class MapTo(
-    val target: KClass<*>
+    val target: KClass<*>,
+    val mappingDirection: MappingDirection = MappingDirection.FROM
 )
+
+enum class MappingDirection {
+    FROM,
+    TO,
+    BOTH
+}

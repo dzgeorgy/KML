@@ -47,34 +47,29 @@ class KameleonProcessor(
             firstRound = false
         }
 
-        val mappingSequence = resolver.getSymbolsWithAnnotation(MapTo::class.qualifiedName!!)
-
-        val mappers = mappingSequence.map { it.accept(mapToVisitor, Unit) }
-            .forEach { data ->
-                data.groupBy { it.from }
-                    .forEach { (source, targets) ->
-                        val mappers = targets.map {
-                            FunSpec.builder("to${it.to}")
-                                .receiver(it.from.toClassName())
-                                .returns(it.to.toClassName())
-                                .addKdoc("${it.from} -> ${it.to}")
-                                .addCode(
-                                    """return ${
-                                        it.mapping.map { (k, v) -> "$k = this.$v" }.joinToString(
-                                            separator = ", ",
-                                            prefix = "${it.to}(",
-                                            postfix = ")"
-                                        )
-                                    }
-                                    """.trimIndent()
+        resolver.getSymbolsWithAnnotation(MapTo::class.qualifiedName!!)
+            .flatMap { it.accept(mapToVisitor, Unit) }
+            .groupBy { it.from }
+            .forEach { (source, targets) ->
+                val mappers = targets.map {
+                    FunSpec.builder("to${it.to}")
+                        .receiver(it.from.toClassName())
+                        .returns(it.to.toClassName())
+                        .addKdoc("${it.from} -> ${it.to}")
+                        .addCode(
+                            it.mapping.map { (paramName, propertyName) -> "$paramName = this.$propertyName" }
+                                .joinToString(
+                                    separator = ", ",
+                                    prefix = "return ${it.to}(",
+                                    postfix = ")"
                                 )
-                                .build()
-                        }
-                        val file = FileSpec.builder(source.packageName.asString(), "${source}Mapper")
-                            .addFunctions(mappers)
-                            .build()
-                            .writeTo(codeGenerator, false)
-                    }
+                        )
+                        .build()
+                }
+                FileSpec.builder(source.packageName.asString(), "${source}Mapper")
+                    .addFunctions(mappers)
+                    .build()
+                    .writeTo(codeGenerator, false)
             }
 
         return emptyList()
