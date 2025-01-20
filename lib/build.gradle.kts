@@ -1,5 +1,11 @@
 plugins {
-    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.multiplatform)
+}
 
-    `java-library`
+kotlin {
+    // Targets
+    jvm()
+
+    // Config
+    jvmToolchain(11)
 }
