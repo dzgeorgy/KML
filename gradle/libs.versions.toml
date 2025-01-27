@@ -9,5 +9,4 @@ kotlinpoet = { module = "com.squareup:kotlinpoet-ksp", version.ref = "kotlinpoet
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
-kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
